@@ -24,9 +24,6 @@ func DbInstance() *mongo.Client {
 	// Creating Mongo Context with a timer
 	cntxt, cancelContext := context.WithTimeout(context.Background(), 10*time.Second)
 
-	//Cancelling the context once the value from this func is return
-	defer cancelContext()
-
 	/*
 		Connecting to the mongo database:
 		This code creates a new options.ClientOptions object, which
@@ -40,6 +37,9 @@ func DbInstance() *mongo.Client {
 		fmt.Println("Could Not Connect to DB")
 		log.Fatal(err)
 	}
+
+	//Cancelling the context once the value from this func is return
+	defer cancelContext()
 
 	return client
 }

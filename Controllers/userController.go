@@ -123,7 +123,31 @@ func ExecuteSignUp() gin.HandlerFunc {
 	}
 }
 
-func ExecuteLogin()
+func ExecuteLogin() gin.HandlerFunc {
+	return func(requestCntxt *gin.Context) {
+		var cntxt, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		var user models.User
+		var foundUser models.User
+
+		if err := requestCntxt.BindJSON(&user); err != nil {
+			requestCntxt.JSON(http.StatusBadRequest, gin.H{"Error": err.Error()})
+			return
+		}
+
+		requiredUser := userCollection.FindOne(cntxt, bson.M{"email": user.Email})
+
+		err := requiredUser.Decode(&foundUser)
+		if err != nil {
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Email or Password is Incorrect"})
+			return
+		}
+
+		//TO DO
+		//VerifyPassword
+
+	}
+}
 
 func GetAllUsers()
 

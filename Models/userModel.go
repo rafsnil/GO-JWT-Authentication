@@ -15,7 +15,8 @@ type User struct {
 	Phone         *string            `json:"phone" validate:"required"`
 	Token         *string            `json:"token"`
 	User_Type     *string            `json:"user_type" validate:"required, eq=ADMIN|eq=USER"`
-	Refresh_Token time.Time          `json:"refresh_token"`
+	Refresh_Token *string            `json:"refresh_token"`
 	Created_At    time.Time          `json:"created_at"`
+	Updated_At    time.Time          `json:"updated_at"`
 	User_Id       string             `json:"user_id"`
 }

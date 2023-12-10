@@ -1,11 +1,17 @@
 package helpers
 
 import (
+	"context"
 	"log"
 	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt"
+	database "github.com/rafsnil/Go-JWT-Authentication/Database"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type SignedDetails struct {
@@ -17,7 +23,7 @@ type SignedDetails struct {
 	jwt.StandardClaims
 }
 
-//var userCollection *mongo.Collection = database.OpenCollection(database.Client, "User")
+var userCollection *mongo.Collection = database.OpenCollection(database.Client, "User")
 
 var SECRET_KEY string = os.Getenv("JWT_SECRET_KEY")
 
@@ -65,5 +71,56 @@ func GenerateAllTokens(userEmail string, userFname string, userLname string, use
 	}
 
 	return token, refreshToken, err
+
+}
+
+func UpdateAllTokens(signedToken string, signedRefreshToken string, userId string) {
+	//Creating a context to interact with the MongoDB
+	cntxt, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
+	/*
+		Primitive.D is a type alias for []bson.E in the Go programming
+		language. This means that it represents an ordered slice of bson.E
+		elements. bson.E, in turn, represents a single key-value pair in the BSON format, which is the native data format used by MongoDB.
+	*/
+	var updateObj primitive.D
+
+	/*
+		The method below used to work in older version of GO, but
+		now is depreciated.
+		updateObj = append(updateObj, bson.E{"token", signedToken})
+		Instead do this to get the exact same result as above
+	*/
+	updateObj = append(updateObj, bson.E{Key: "token", Value: signedToken})
+	updateObj = append(updateObj, bson.E{Key: "refresh_token", Value: signedRefreshToken})
+
+	updateAt, _ := time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	updateObj = append(updateObj, bson.E{Key: "updated_at", Value: updateAt})
+
+	//Here Upsert means both updating and inserting
+	upsert := true
+
+	//Setting filter to look for the doc that needs to be updated
+	filter := bson.M{"user_id": userId}
+
+	opt := options.UpdateOptions{
+		Upsert: &upsert,
+	}
+
+	update := bson.D{
+		{Key: "$set", Value: updateObj},
+	}
+	_, err := userCollection.UpdateOne(
+		cntxt,
+		filter,
+		update,
+		&opt,
+	)
+
+	if err != nil {
+		log.Panic(err)
+		return
+	}
 
 }

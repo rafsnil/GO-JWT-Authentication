@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -52,7 +53,7 @@ func VerifyPassword(userPasswrod string, providedPassword string) (bool, string)
 // 2
 func ExecuteSignUp() gin.HandlerFunc {
 	return func(requestCntxt *gin.Context) {
-		var cntxt, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		var cntxt, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 		defer cancel()
 
 		var user models.User
@@ -156,7 +157,7 @@ func ExecuteSignUp() gin.HandlerFunc {
 
 func ExecuteLogin() gin.HandlerFunc {
 	return func(requestCntxt *gin.Context) {
-		var cntxt, cancel = context.WithTimeout(context.Background(), 10*time.Second)
+		var cntxt, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 		defer cancel()
 		var user models.User
 		var foundUser models.User
@@ -206,7 +207,49 @@ func ExecuteLogin() gin.HandlerFunc {
 	}
 }
 
-func GetAllUsers()
+// GET USERS HANDLER
+// GetAllUsers() cann only be used by admin
+func GetAllUsers() gin.HandlerFunc {
+	return func(requestCntxt *gin.Context) {
+		//Checking if the user is admin
+		err := helpers.CheckUserType(requestCntxt, "ADMIN")
+		if err != nil {
+			requestCntxt.JSON(http.StatusBadRequest, gin.H{"Error": err.Error()})
+			return
+		}
+		var cntxt, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
+
+		/*
+			The purpose of recordPerPage in this function is to determine the number of users
+			to retrieve per page in the user list. It is used to handle pagination, which
+			allows users to browse through a large list of users without having to load all
+			of them at once.
+		*/
+
+		//Specifying how many users will be listed in one page if recordPerPage is missing in the url
+		recordPerPage, err := strconv.Atoi(requestCntxt.Query("recordPerPage"))
+		if err != nil || recordPerPage < 1 {
+			recordPerPage = 10
+		}
+
+		//Specifying how many pages will be created with the records if page is missing in the url
+		page, err := strconv.Atoi(requestCntxt.Query("page"))
+		if err != nil || page < 1 {
+			page = 1
+		}
+
+		startIndex := (page - 1) * recordPerPage
+		startIndex, err = strconv.Atoi(requestCntxt.Query("startIndex"))
+
+		matchStage := bson.D{{"$match", bson.D{{}}}}
+		// matchStage := bson.D{{Key: "$match", Value: bson.D{{}}}}
+		groupStage := bson.D{{"$group", bson.D{{"_id", bson.D{{"_id", "null"}}}}}}
+
+		//TO DO
+
+	}
+}
 
 // GET USER BY ID HANDLER
 // This can be accessed by only ADMINS
@@ -224,7 +267,7 @@ func GetUserByID() gin.HandlerFunc {
 			return
 		}
 
-		cntxt, cancelContext := context.WithTimeout(context.Background(), 10*time.Second)
+		cntxt, cancelContext := context.WithTimeout(context.Background(), 100*time.Second)
 		var user models.User
 
 		//Looking for the doc which has the same user_id

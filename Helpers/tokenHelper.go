@@ -92,6 +92,7 @@ func UpdateAllTokens(signedToken string, signedRefreshToken string, userId strin
 		updateObj = append(updateObj, bson.E{"token", signedToken})
 		Instead do this to get the exact same result as above
 	*/
+	//bson.E{} is used here, as we are trying to maitain the oder of the info in the doc
 	updateObj = append(updateObj, bson.E{Key: "token", Value: signedToken})
 	updateObj = append(updateObj, bson.E{Key: "refresh_token", Value: signedRefreshToken})
 
@@ -102,12 +103,18 @@ func UpdateAllTokens(signedToken string, signedRefreshToken string, userId strin
 	upsert := true
 
 	//Setting filter to look for the doc that needs to be updated
+	//Typically bson.M is used when the order of the filter(the info inside it) does not matter.
+	//If the order massters, then use bson.D for filter
 	filter := bson.M{"user_id": userId}
 
 	opt := options.UpdateOptions{
 		Upsert: &upsert,
 	}
-
+	/*
+		Using "$set" in bson.D specifies that the provided values
+		should update the corresponding fields in the existing document.
+	*/
+	//bson.D ensures that the order of the updated doc is maintained
 	update := bson.D{
 		{Key: "$set", Value: updateObj},
 	}

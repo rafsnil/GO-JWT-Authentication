@@ -15,14 +15,38 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var userCollection *mongo.Collection = database.OpenCollection(database.Client, "Users")
 var validate = validator.New()
 
-func HashPassword()
+// HASH PASSWORD HANDLER
+func HashPassword(userPassword string) string {
+	//Hashing the password
+	password, err := bcrypt.GenerateFromPassword([]byte(userPassword), 14)
+	if err != nil {
+		log.Panic(err)
+		return ""
+	}
+	return string(password)
+}
 
-func VerifyPassword()
+// VERIFY PASSWORD HANDLER
+func VerifyPassword(userPasswrod string, providedPassword string) (bool, string) {
+	//Comparing the hashed password with the given password
+	err := bcrypt.CompareHashAndPassword([]byte(providedPassword), []byte(userPasswrod))
+	check := true
+	msg := ""
+
+	if err != nil {
+		msg = fmt.Sprintf("Password is Incorrect!")
+		check = false
+	}
+
+	return check, msg
+
+}
 
 // SIGN UP HANDLER
 // 2
@@ -51,14 +75,16 @@ func ExecuteSignUp() gin.HandlerFunc {
 		}
 
 		/*
-			After successfull validation, checking if the email and phone
-			number already exist in the database
+			After successfull validation, FIRST OF ALL hash and store
+			the password so that it is in plaintext form for the minimal
+			time in the systen checking if the email and phonenumber already exist in the database
 		*/
 		count, err := userCollection.CountDocuments(cntxt, bson.M{"email": user.Email})
 		if err != nil {
 			// defer cancel()
 			log.Panic(err)
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error occured while checking the email."})
+			return
 		}
 
 		count, err = userCollection.CountDocuments(cntxt, bson.M{"phone": user.Phone})
@@ -66,10 +92,12 @@ func ExecuteSignUp() gin.HandlerFunc {
 			// defer cancel()
 			log.Panic(err)
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error occured while checking the phone number"})
+			return
 		}
 
 		if count > 0 {
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "This Email or Phone Number Already Exists!"})
+			return
 		}
 
 		//Assigning the created and updated time
@@ -79,11 +107,13 @@ func ExecuteSignUp() gin.HandlerFunc {
 		user.Created_At, err = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		if err != nil {
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error while parsing time for created_at"})
+			return
 		}
 
 		user.Updated_At, err = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 		if err != nil {
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error while parsing time for created_at"})
+			return
 		}
 
 		user.Id = primitive.NewObjectID()
@@ -103,6 +133,7 @@ func ExecuteSignUp() gin.HandlerFunc {
 		if err != nil {
 			log.Panic(err)
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error while generating token"})
+			return
 		}
 
 		//& is used as both token and refresh token are string pointers in the user model.
@@ -135,6 +166,7 @@ func ExecuteLogin() gin.HandlerFunc {
 			return
 		}
 
+		//userCollection.FindOne() returns nil if the required doc is not found
 		requiredUser := userCollection.FindOne(cntxt, bson.M{"email": user.Email})
 
 		err := requiredUser.Decode(&foundUser)
@@ -143,9 +175,34 @@ func ExecuteLogin() gin.HandlerFunc {
 			return
 		}
 
-		//TO DO
-		//VerifyPassword
+		passIsValid, msg := VerifyPassword(*user.Password, *foundUser.Password)
+		if passIsValid != true {
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": msg})
+			return
+		}
 
+		if foundUser.Email == nil {
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "User not found!"})
+		}
+		/*
+			The expression *foundUser.Email accesses the actual email address of a user in Go. The variable foundUser
+			holds an object of type User, with an Email field defined as a pointer to a string. The * operator
+			dereferences the pointer to retrieve the underlying string value, which is the user's email address.
+		*/
+		token, refreshtoken, err := helpers.GenerateAllTokens(*foundUser.Email, *foundUser.First_Name, *foundUser.Last_Name, *foundUser.User_Type, *&foundUser.User_Id)
+		if err != nil {
+			log.Panic(err)
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error while generating tokens!"})
+		}
+
+		helpers.UpdateAllTokens(token, refreshtoken, foundUser.User_Id)
+		//The user is looked for again, to ensure the foundUser has the token and refresh token
+		err = userCollection.FindOne(cntxt, bson.M{"user_id": foundUser.User_Id}).Decode(&foundUser)
+		if err != nil {
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": err.Error()})
+			return
+		}
+		requestCntxt.JSON(http.StatusOK, foundUser)
 	}
 }
 
@@ -179,6 +236,7 @@ func GetUserByID() gin.HandlerFunc {
 
 		if err1 != nil {
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": err1.Error()})
+			return
 		}
 
 		requestCntxt.JSON(http.StatusOK, user)

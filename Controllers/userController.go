@@ -2,7 +2,6 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -41,7 +40,7 @@ func VerifyPassword(userPasswrod string, providedPassword string) (bool, string)
 	msg := ""
 
 	if err != nil {
-		msg = fmt.Sprintf("Password is Incorrect!")
+		msg = "Password is Incorrect!"
 		check = false
 	}
 
@@ -87,6 +86,10 @@ func ExecuteSignUp() gin.HandlerFunc {
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error occured while checking the email."})
 			return
 		}
+		if count > 0 {
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "This Email Already Exists!"})
+			return
+		}
 
 		count, err = userCollection.CountDocuments(cntxt, bson.M{"phone": user.Phone})
 		if err != nil {
@@ -97,7 +100,7 @@ func ExecuteSignUp() gin.HandlerFunc {
 		}
 
 		if count > 0 {
-			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "This Email or Phone Number Already Exists!"})
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "This Phone Number Already Exists!"})
 			return
 		}
 
@@ -128,7 +131,7 @@ func ExecuteSignUp() gin.HandlerFunc {
 			However, as user.User_Id is not a string pointer, we can directly send the value
 			or we can send *&user.User_Id (if we are a bitch about memory waste)
 		*/
-		token, refreshToken, err := helpers.GenerateAllTokens(*user.Email, *user.First_Name, *user.Last_Name, *user.User_Type, *&user.User_Id)
+		token, refreshToken, err := helpers.GenerateAllTokens(*user.Email, *user.First_Name, *user.Last_Name, *user.User_Type, user.User_Id)
 		// token, refreshToken, _ := helpers.GenerateAllTokens(*user.Email, *user.First_Name, *user.Last_Name, *user.User_Type, user.User_Id)
 
 		if err != nil {
@@ -145,8 +148,7 @@ func ExecuteSignUp() gin.HandlerFunc {
 		resultInsertionNumber, insertErr := userCollection.InsertOne(cntxt, user)
 		if insertErr != nil {
 			// defer cancel()
-			msg := fmt.Sprintf("User item was not created.")
-			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": msg})
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "User item was not created."})
 			return
 		}
 
@@ -177,7 +179,7 @@ func ExecuteLogin() gin.HandlerFunc {
 		}
 
 		passIsValid, msg := VerifyPassword(*user.Password, *foundUser.Password)
-		if passIsValid != true {
+		if !passIsValid {
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": msg})
 			return
 		}
@@ -190,7 +192,7 @@ func ExecuteLogin() gin.HandlerFunc {
 			holds an object of type User, with an Email field defined as a pointer to a string. The * operator
 			dereferences the pointer to retrieve the underlying string value, which is the user's email address.
 		*/
-		token, refreshtoken, err := helpers.GenerateAllTokens(*foundUser.Email, *foundUser.First_Name, *foundUser.Last_Name, *foundUser.User_Type, *&foundUser.User_Id)
+		token, refreshtoken, err := helpers.GenerateAllTokens(*foundUser.Email, *foundUser.First_Name, *foundUser.Last_Name, *foundUser.User_Type, foundUser.User_Id)
 		if err != nil {
 			log.Panic(err)
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error while generating tokens!"})
@@ -240,14 +242,59 @@ func GetAllUsers() gin.HandlerFunc {
 		}
 
 		startIndex := (page - 1) * recordPerPage
-		startIndex, err = strconv.Atoi(requestCntxt.Query("startIndex"))
+		parsedStartIndex, err := strconv.Atoi(requestCntxt.Query("startIndex"))
+		if err == nil {
+			startIndex = parsedStartIndex
+		}
 
-		matchStage := bson.D{{"$match", bson.D{{}}}}
-		// matchStage := bson.D{{Key: "$match", Value: bson.D{{}}}}
-		groupStage := bson.D{{"$group", bson.D{{"_id", bson.D{{"_id", "null"}}}}}}
+		//Setting up a match stage with no matching criteria
+		//allowing all docs to pass through without filering
+		matchStage := bson.D{{Key: "$match", Value: bson.D{{}}}}
 
-		//TO DO
+		//Settin up the group stage where all docs will be grouped together as id is null
+		//Then total number of focuments are counted and then
+		//all the docs are pushed into data
+		groupStage := bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "_id", Value: "null"}}},
+			{Key: "total_count", Value: bson.D{{Key: "$sum", Value: 1}}},
+			{Key: "data", Value: bson.D{{Key: "$push", Value: "$$ROOT"}}}}}}
 
+		/*
+			$project tells that this is the project stage.
+			Id field is excluded
+			total_count is included
+			new field "user_items" is created which will hold a subset of the data
+			It is called $data because it was name "data" in the groupStage
+			$slice is used to get recordPerPage number of data.
+			If startIndex is provided, slicing will start from startIndex. Otherwise, slicing will start from the beginning of the data array.
+		*/
+		projectStage := bson.D{
+			{Key: "$Project", Value: bson.D{
+				{Key: "_id", Value: 0},
+				{Key: "total_count", Value: 1},
+				{Key: "user_items", Value: bson.D{
+					{Key: "$slice", Value: []interface{}{"$data", startIndex, recordPerPage}}}},
+			}}}
+
+		//Using aggregate which returns a cursor, to get my required data in the required style
+		result, err := userCollection.Aggregate(cntxt, mongo.Pipeline{
+			matchStage,
+			groupStage,
+			projectStage,
+		})
+
+		if err != nil {
+			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error occured while listing user items"})
+		}
+
+		var allUsers []bson.M
+		//Decoding all the docs into allUsers which is a bson.M slice.
+		err = result.All(cntxt, &allUsers)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		requestCntxt.JSON(http.StatusOK, allUsers[0])
 	}
 }
 

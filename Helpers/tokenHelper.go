@@ -74,6 +74,38 @@ func GenerateAllTokens(userEmail string, userFname string, userLname string, use
 
 }
 
+func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
+
+	//Checking the clains with the token
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&SignedDetails{},
+		func(token *jwt.Token) (interface{}, error) {
+			return []byte(SECRET_KEY), nil
+		},
+	)
+
+	if err != nil {
+		msg = err.Error()
+		return
+	}
+	//Claim is basically all info that the user has in his token
+	//Converting the tokenClaims to signedDetails using type assertion
+	claim, ok := token.Claims.(*SignedDetails)
+	if !ok {
+		msg = "The Token is Invalid!"
+		return
+	}
+
+	//Checking for the token expiration
+	if claims.ExpiresAt < time.Now().Unix() {
+		msg = "Token is Expired"
+		return
+	}
+
+	return claim, msg
+}
+
 func UpdateAllTokens(signedToken string, signedRefreshToken string, userId string) {
 	//Creating a context to interact with the MongoDB
 	cntxt, cancel := context.WithTimeout(context.Background(), 100*time.Second)

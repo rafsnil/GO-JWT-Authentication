@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/http"
 	"strconv"
@@ -35,7 +36,10 @@ func HashPassword(userPassword string) string {
 // VERIFY PASSWORD HANDLER
 func VerifyPassword(userPasswrod string, providedPassword string) (bool, string) {
 	//Comparing the hashed password with the given password
+	fmt.Println("Pass Given by user: " + userPasswrod)
+	fmt.Println("Pass Stored in DB: " + providedPassword)
 	err := bcrypt.CompareHashAndPassword([]byte(providedPassword), []byte(userPasswrod))
+	fmt.Println(err)
 	check := true
 	msg := ""
 
@@ -65,20 +69,57 @@ func ExecuteSignUp() gin.HandlerFunc {
 			return
 		}
 
+		// err1 := validate.StructPartial(user, "First_Name")
+		// if err1 != nil {
+		// 	fmt.Println("Could not validate first name")
+		// 	log.Panic(err1)
+		// }
+		// err2 := validate.StructPartial(user, "Last_Name")
+		// if err2 != nil {
+		// 	fmt.Println("Could not validate last name")
+		// 	log.Panic(err2)
+		// }
+		// err3 := validate.StructPartial(user, "Password")
+		// if err3 != nil {
+		// 	fmt.Println("Could not validate password")
+		// 	log.Panic(err3)
+		// }
+		// err4 := validate.StructPartial(user, "Email")
+		// if err4 != nil {
+		// 	fmt.Println("Could not validate email")
+		// 	log.Panic(err4)
+		// }
+		// err5 := validate.StructPartial(user, "Phone")
+		// if err5 != nil {
+		// 	fmt.Println("Could not validate phone")
+		// 	log.Panic(err5)
+		// }
+		// err6 := validate.StructPartial(user, "User_Type")
+		// if err6 != nil {
+		// 	fmt.Println("Could not validate user_type")
+		// 	log.Panic(err6)
+		//}
+
 		/*Validating the user info according to the validation
 		rules mentioned in userModels.go*/
+
 		validationErr := validate.Struct(user)
+
 		if validationErr != nil {
 			requestCntxt.JSON(http.StatusBadRequest, gin.H{"Error": err.Error()})
 			// defer cancel()
 			return
 		}
-
+		//fmt.Println("Running till here: After validation")
 		/*
 			After successfull validation, FIRST OF ALL hash and store
 			the password so that it is in plaintext form for the minimal
 			time in the systen checking if the email and phonenumber already exist in the database
 		*/
+
+		password := HashPassword(*user.Password)
+		user.Password = &password
+
 		count, err := userCollection.CountDocuments(cntxt, bson.M{"email": user.Email})
 		if err != nil {
 			// defer cancel()
@@ -234,18 +275,20 @@ func GetAllUsers() gin.HandlerFunc {
 		if err != nil || recordPerPage < 1 {
 			recordPerPage = 10
 		}
-
+		// fmt.Println("Ran after recordPerPage")
 		//Specifying how many pages will be created with the records if page is missing in the url
 		page, err := strconv.Atoi(requestCntxt.Query("page"))
 		if err != nil || page < 1 {
 			page = 1
 		}
+		// fmt.Println("Ran after Page")
 
 		startIndex := (page - 1) * recordPerPage
 		parsedStartIndex, err := strconv.Atoi(requestCntxt.Query("startIndex"))
 		if err == nil {
 			startIndex = parsedStartIndex
 		}
+		// fmt.Println("Ran after startIndex")
 
 		//Setting up a match stage with no matching criteria
 		//allowing all docs to pass through without filering
@@ -269,7 +312,7 @@ func GetAllUsers() gin.HandlerFunc {
 			If startIndex is provided, slicing will start from startIndex. Otherwise, slicing will start from the beginning of the data array.
 		*/
 		projectStage := bson.D{
-			{Key: "$Project", Value: bson.D{
+			{Key: "$project", Value: bson.D{
 				{Key: "_id", Value: 0},
 				{Key: "total_count", Value: 1},
 				{Key: "user_items", Value: bson.D{
@@ -286,12 +329,16 @@ func GetAllUsers() gin.HandlerFunc {
 		if err != nil {
 			requestCntxt.JSON(http.StatusInternalServerError, gin.H{"Error": "Error occured while listing user items"})
 		}
+		// fmt.Println("Ran after aggregate")
+		// fmt.Println("\n\n\n\nPrinting the curcsor:", result, "\n\n\n\n")
 
 		var allUsers []bson.M
 		//Decoding all the docs into allUsers which is a bson.M slice.
 		err = result.All(cntxt, &allUsers)
+		// fmt.Println("\n\n\n\nPrinting the stuff:", allUsers, "\n\n\n\n")
 		if err != nil {
 			log.Fatal(err)
+			// fmt.Println("\n\nError here:\n\n", err, "\n\n")
 		}
 
 		requestCntxt.JSON(http.StatusOK, allUsers[0])

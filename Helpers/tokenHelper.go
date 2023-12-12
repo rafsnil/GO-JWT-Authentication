@@ -55,7 +55,7 @@ func GenerateAllTokens(userEmail string, userFname string, userLname string, use
 	}
 
 	//Creating a Token
-	token, err := jwt.NewWithClaims(jwt.SigningMethodES256, claims).SignedString([]byte(SECRET_KEY))
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(SECRET_KEY))
 
 	if err != nil {
 		log.Panic(err)
@@ -63,7 +63,7 @@ func GenerateAllTokens(userEmail string, userFname string, userLname string, use
 	}
 
 	//Creating a refresh token
-	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodES256, refreshClaims).SignedString([]byte(SECRET_KEY))
+	refreshToken, err := jwt.NewWithClaims(jwt.SigningMethodHS256, refreshClaims).SignedString([]byte(SECRET_KEY))
 
 	if err != nil {
 		log.Panic(err)
@@ -84,7 +84,7 @@ func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
 			return []byte(SECRET_KEY), nil
 		},
 	)
-
+	// fmt.Println("Success in parsing the claims")
 	if err != nil {
 		msg = err.Error()
 		return
@@ -96,13 +96,13 @@ func ValidateToken(signedToken string) (claims *SignedDetails, msg string) {
 		msg = "The Token is Invalid!"
 		return
 	}
-
+	// fmt.Println("Success in converting the claims")
 	//Checking for the token expiration
-	if claims.ExpiresAt < time.Now().Unix() {
+	if claim.ExpiresAt < time.Now().Unix() {
 		msg = "Token is Expired"
 		return
 	}
-
+	// fmt.Println("Success in checking expiration date of the claims")
 	return claim, msg
 }
 
